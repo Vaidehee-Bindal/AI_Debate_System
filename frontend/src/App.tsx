@@ -14,7 +14,8 @@ import {
   UserRound,
 } from "lucide-react";
 
-const API_BASE = import.meta.env.VITE_API_BASE ?? "http://127.0.0.1:8000";
+// Prefer `VITE_API_URL` (used in .env). Fall back to `VITE_API_BASE` for compatibility.
+const API_BASE = import.meta.env.VITE_API_URL ?? import.meta.env.VITE_API_BASE ?? "http://127.0.0.1:8000";
 
 type Message = {
   id?: string;
