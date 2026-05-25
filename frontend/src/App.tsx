@@ -15,7 +15,8 @@ import {
 } from "lucide-react";
 
 // Prefer `VITE_API_URL` (used in .env). Fall back to `VITE_API_BASE` for compatibility.
-const API_BASE = import.meta.env.VITE_API_URL ?? import.meta.env.VITE_API_BASE ?? "http://127.0.0.1:8000";
+// Use `API_URL` variable name to match deployment examples.
+const API_URL = import.meta.env.VITE_API_URL ?? import.meta.env.VITE_API_BASE ?? "http://127.0.0.1:8000";
 
 type Message = {
   id?: string;
@@ -85,7 +86,7 @@ export function App() {
   const [rightMaxHeight, setRightMaxHeight] = useState<number | null>(null);
 
   useEffect(() => {
-    fetch(`${API_BASE}/api/debates`).then((r) => r.json()).then(setHistory).catch(() => setHistory([]));
+    fetch(`${API_URL}/api/debates`).then((r) => r.json()).then(setHistory).catch(() => setHistory([]));
   }, []);
 
   useEffect(() => {
@@ -144,9 +145,9 @@ export function App() {
     setIsRunning(true);
 
     try {
-      const health = await fetch(`${API_BASE}/api/health`).catch(() => null);
+      const health = await fetch(`${API_URL}/api/health`).catch(() => null);
       if (!health || !health.ok) throw new Error("Backend unreachable");
-      const created = await fetch(`${API_BASE}/api/debates`, {
+      const created = await fetch(`${API_URL}/api/debates`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ topic, rounds, stance_style: "balanced" }),
@@ -157,9 +158,9 @@ export function App() {
 
       setDebate(created);
       setIsReadOnlyDebate(false);
-      const stream = new EventSource(`${API_BASE}/api/debates/${created.id}/stream`);
+      const stream = new EventSource(`${API_URL}/api/debates/${created.id}/stream`);
       stream.onerror = () => {
-        setError(`Failed to open stream to ${API_BASE}`);
+        setError(`Failed to open stream to ${API_URL}`);
         setIsRunning(false);
         stream.close();
       };
@@ -173,7 +174,7 @@ export function App() {
         setDebate((c) => (c ? { ...c, winner: data.winner, status: "complete", final_summary: data.final_summary } : c));
         setIsRunning(false);
         stream.close();
-        fetch(`${API_BASE}/api/debates`).then((r) => r.json()).then(setHistory).catch(() => undefined);
+        fetch(`${API_URL}/api/debates`).then((r) => r.json()).then(setHistory).catch(() => undefined);
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -200,11 +201,11 @@ export function App() {
 
     try {
       if (deletePrompt.scope === "all") {
-        await fetch(`${API_BASE}/api/debates`, { method: "DELETE" });
+        await fetch(`${API_URL}/api/debates`, { method: "DELETE" });
         setHistory([]);
         startNewDebate();
       } else if (deletePrompt.debateId) {
-        await fetch(`${API_BASE}/api/debates/${deletePrompt.debateId}`, { method: "DELETE" });
+        await fetch(`${API_URL}/api/debates/${deletePrompt.debateId}`, { method: "DELETE" });
         setHistory((items) => items.filter((item) => item.id !== deletePrompt.debateId));
         if (debate?.id === deletePrompt.debateId) {
           startNewDebate();
@@ -218,7 +219,7 @@ export function App() {
   }
 
   async function loadDebate(id: string) {
-    const detail = await fetch(`${API_BASE}/api/debates/${id}`).then((r) => r.json());
+    const detail = await fetch(`${API_URL}/api/debates/${id}`).then((r) => r.json());
     setDebate(detail);
     setTopic(detail.topic);
     setRounds(detail.rounds);
