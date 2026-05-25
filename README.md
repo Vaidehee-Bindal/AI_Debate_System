@@ -2,6 +2,9 @@
 
 AI Debate System is a source-backed, multi-agent debate platform built with FastAPI, LangGraph, Groq, Tavily, SQLite, React, and Tailwind CSS. It lets you run structured debates between a Pro Agent and a Con Agent, track claims and references, score each round, and review debate history later.
 
+## Live Demo 
+Try it here - https://educational-ai-debate-system.vercel.app/
+
 ## Tech Stack
 
 | Layer | Technologies Used |
