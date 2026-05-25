@@ -32,6 +32,7 @@ def init_db() -> None:
             """
             CREATE TABLE IF NOT EXISTS debates (
                 id TEXT PRIMARY KEY,
+                device_id TEXT NOT NULL DEFAULT '',
                 topic TEXT NOT NULL,
                 rounds INTEGER NOT NULL,
                 stance_style TEXT NOT NULL,
@@ -93,19 +94,22 @@ def init_db() -> None:
             );
             """
         )
+        debate_columns = {row[1] for row in conn.execute("PRAGMA table_info(debates)")}
+        if "device_id" not in debate_columns:
+            conn.execute("ALTER TABLE debates ADD COLUMN device_id TEXT NOT NULL DEFAULT ''")
 
 
-def create_debate(topic: str, rounds: int, stance_style: str) -> dict[str, Any]:
+def create_debate(topic: str, rounds: int, stance_style: str, device_id: str) -> dict[str, Any]:
     debate_id = str(uuid.uuid4())
     with connect() as conn:
         conn.execute(
             """
-            INSERT INTO debates (id, topic, rounds, stance_style, status)
-            VALUES (?, ?, ?, ?, 'created')
+            INSERT INTO debates (id, device_id, topic, rounds, stance_style, status)
+            VALUES (?, ?, ?, ?, ?, 'created')
             """,
-            (debate_id, topic, rounds, stance_style),
+            (debate_id, device_id, topic, rounds, stance_style),
         )
-    return get_debate(debate_id)
+    return get_debate(debate_id, device_id)
 
 
 def add_message(debate_id: str, round_number: int, speaker: str, content: str) -> dict[str, Any]:
@@ -209,15 +213,15 @@ def mark_error(debate_id: str) -> None:
         conn.execute("UPDATE debates SET status = 'error', updated_at = CURRENT_TIMESTAMP WHERE id = ?", (debate_id,))
 
 
-def list_debates() -> list[dict[str, Any]]:
+def list_debates(device_id: str) -> list[dict[str, Any]]:
     with connect() as conn:
-        rows = conn.execute("SELECT * FROM debates ORDER BY created_at DESC").fetchall()
+        rows = conn.execute("SELECT * FROM debates WHERE device_id = ? ORDER BY created_at DESC", (device_id,)).fetchall()
     return [dict(row) for row in rows]
 
 
-def get_debate(debate_id: str) -> dict[str, Any]:
+def get_debate(debate_id: str, device_id: str) -> dict[str, Any]:
     with connect() as conn:
-        debate = conn.execute("SELECT * FROM debates WHERE id = ?", (debate_id,)).fetchone()
+        debate = conn.execute("SELECT * FROM debates WHERE id = ? AND device_id = ?", (debate_id, device_id)).fetchone()
         if debate is None:
             raise KeyError(debate_id)
         detail = dict(debate)
@@ -241,13 +245,19 @@ def get_debate(debate_id: str) -> dict[str, Any]:
     return detail
 
 
-def get_sources(debate_id: str) -> list[dict[str, Any]]:
+def get_sources(debate_id: str, device_id: str) -> list[dict[str, Any]]:
     with connect() as conn:
+        debate = conn.execute("SELECT 1 FROM debates WHERE id = ? AND device_id = ?", (debate_id, device_id)).fetchone()
+        if debate is None:
+            raise KeyError(debate_id)
         return [dict(row) for row in conn.execute("SELECT * FROM sources WHERE debate_id = ?", (debate_id,))]
 
 
-def delete_debate(debate_id: str) -> None:
+def delete_debate(debate_id: str, device_id: str) -> None:
     with connect() as conn:
+        debate = conn.execute("SELECT 1 FROM debates WHERE id = ? AND device_id = ?", (debate_id, device_id)).fetchone()
+        if debate is None:
+            return
         conn.execute("DELETE FROM sources WHERE debate_id = ?", (debate_id,))
         conn.execute("DELETE FROM scores WHERE debate_id = ?", (debate_id,))
         conn.execute("DELETE FROM fact_checks WHERE debate_id = ?", (debate_id,))
@@ -256,15 +266,15 @@ def delete_debate(debate_id: str) -> None:
         conn.execute("DELETE FROM debates WHERE id = ?", (debate_id,))
 
 
-def clear_all() -> None:
+def clear_all(device_id: str) -> None:
     with connect() as conn:
-        conn.executescript(
-            """
-            DELETE FROM sources;
-            DELETE FROM scores;
-            DELETE FROM fact_checks;
-            DELETE FROM claims;
-            DELETE FROM messages;
-            DELETE FROM debates;
-            """
-        )
+        debate_ids = [row[0] for row in conn.execute("SELECT id FROM debates WHERE device_id = ?", (device_id,)).fetchall()]
+        if not debate_ids:
+            return
+        placeholders = ",".join("?" for _ in debate_ids)
+        conn.execute(f"DELETE FROM sources WHERE debate_id IN ({placeholders})", debate_ids)
+        conn.execute(f"DELETE FROM scores WHERE debate_id IN ({placeholders})", debate_ids)
+        conn.execute(f"DELETE FROM fact_checks WHERE debate_id IN ({placeholders})", debate_ids)
+        conn.execute(f"DELETE FROM claims WHERE debate_id IN ({placeholders})", debate_ids)
+        conn.execute(f"DELETE FROM messages WHERE debate_id IN ({placeholders})", debate_ids)
+        conn.execute(f"DELETE FROM debates WHERE id IN ({placeholders})", debate_ids)

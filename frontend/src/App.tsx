@@ -17,6 +17,16 @@ import {
 // Prefer `VITE_API_URL` (used in .env). Fall back to `VITE_API_BASE` for compatibility.
 // Use `API_URL` variable name to match deployment examples.
 const API_URL = import.meta.env.VITE_API_URL ?? import.meta.env.VITE_API_BASE ?? "http://127.0.0.1:8000";
+const DEVICE_ID_STORAGE_KEY = "ai-debate-system-device-id";
+
+function getOrCreateDeviceId() {
+  if (typeof window === "undefined") return "server";
+  const existing = window.localStorage.getItem(DEVICE_ID_STORAGE_KEY);
+  if (existing) return existing;
+  const deviceId = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  window.localStorage.setItem(DEVICE_ID_STORAGE_KEY, deviceId);
+  return deviceId;
+}
 
 type Message = {
   id?: string;
@@ -61,6 +71,7 @@ type Debate = {
 const nav = [["Dashboard", Home], ["Debate History", History], ["About", Info]] as const;
 
 export function App() {
+  const deviceId = useMemo(() => getOrCreateDeviceId(), []);
   const [topic, setTopic] = useState("");
   const [rounds, setRounds] = useState(3);
   const [debate, setDebate] = useState<Debate | null>(null);
@@ -85,9 +96,15 @@ export function App() {
   const liveRef = useRef<HTMLDivElement | null>(null);
   const [rightMaxHeight, setRightMaxHeight] = useState<number | null>(null);
 
+  function deviceFetch(input: RequestInfo | URL, init: RequestInit = {}) {
+    const headers = new Headers(init.headers ?? {});
+    headers.set("X-Device-Id", deviceId);
+    return fetch(input, { ...init, headers });
+  }
+
   useEffect(() => {
-    fetch(`${API_URL}/api/debates`).then((r) => r.json()).then(setHistory).catch(() => setHistory([]));
-  }, []);
+    deviceFetch(`${API_URL}/api/debates`).then((r) => r.json()).then(setHistory).catch(() => setHistory([]));
+  }, [deviceId]);
 
   useEffect(() => {
     let raf = 0;
@@ -147,7 +164,7 @@ export function App() {
     try {
       const health = await fetch(`${API_URL}/api/health`).catch(() => null);
       if (!health || !health.ok) throw new Error("Backend unreachable");
-      const created = await fetch(`${API_URL}/api/debates`, {
+      const created = await deviceFetch(`${API_URL}/api/debates`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ topic, rounds, stance_style: "balanced" }),
@@ -158,7 +175,7 @@ export function App() {
 
       setDebate(created);
       setIsReadOnlyDebate(false);
-      const stream = new EventSource(`${API_URL}/api/debates/${created.id}/stream`);
+      const stream = new EventSource(`${API_URL}/api/debates/${created.id}/stream?device_id=${encodeURIComponent(deviceId)}`);
       stream.onerror = () => {
         setError(`Failed to open stream to ${API_URL}`);
         setIsRunning(false);
@@ -174,7 +191,7 @@ export function App() {
         setDebate((c) => (c ? { ...c, winner: data.winner, status: "complete", final_summary: data.final_summary } : c));
         setIsRunning(false);
         stream.close();
-        fetch(`${API_URL}/api/debates`).then((r) => r.json()).then(setHistory).catch(() => undefined);
+        deviceFetch(`${API_URL}/api/debates`).then((r) => r.json()).then(setHistory).catch(() => undefined);
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -201,11 +218,11 @@ export function App() {
 
     try {
       if (deletePrompt.scope === "all") {
-        await fetch(`${API_URL}/api/debates`, { method: "DELETE" });
+        await deviceFetch(`${API_URL}/api/debates`, { method: "DELETE" });
         setHistory([]);
         startNewDebate();
       } else if (deletePrompt.debateId) {
-        await fetch(`${API_URL}/api/debates/${deletePrompt.debateId}`, { method: "DELETE" });
+        await deviceFetch(`${API_URL}/api/debates/${deletePrompt.debateId}`, { method: "DELETE" });
         setHistory((items) => items.filter((item) => item.id !== deletePrompt.debateId));
         if (debate?.id === deletePrompt.debateId) {
           startNewDebate();
@@ -219,7 +236,7 @@ export function App() {
   }
 
   async function loadDebate(id: string) {
-    const detail = await fetch(`${API_URL}/api/debates/${id}`).then((r) => r.json());
+    const detail = await deviceFetch(`${API_URL}/api/debates/${id}`).then((r) => r.json());
     setDebate(detail);
     setTopic(detail.topic);
     setRounds(detail.rounds);
@@ -617,7 +634,7 @@ export function App() {
                 </div>
                 <p className="font-semibold text-[#2f241c]">
                   Security note: your debate data is not leaked or shared outside the system, and the stored history is
-                  meant to stay within the application for review and reference.
+                  meant to stay on this device for review and reference.
                 </p>
                 <p className="font-bold text-[#2f241c]">
                   NOTE: This system may occasionally make mistakes, so please review all data and references carefully and apply your own judgment as well.

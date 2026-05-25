@@ -10,7 +10,7 @@ def test_get_debate_attaches_sources_to_fact_checks(tmp_path, monkeypatch):
 
     try:
         db.init_db()
-        debate = db.create_debate("AI should be regulated", 3, "balanced")
+        debate = db.create_debate("AI should be regulated", 3, "balanced", "device-a")
         message = db.add_message(debate["id"], 1, "Pro Agent", "AI should be regulated.")
         claim = db.add_claim(debate["id"], message["id"], "Pro Agent", "AI should be regulated.")
 
@@ -20,7 +20,7 @@ def test_get_debate_attaches_sources_to_fact_checks(tmp_path, monkeypatch):
         ]
         fact_check = db.add_fact_check(debate["id"], claim["id"], "Needs Evidence", 45, "Insufficient support.", sources)
 
-        detail = db.get_debate(debate["id"])
+        detail = db.get_debate(debate["id"], "device-a")
 
         assert detail["fact_checks"]
         assert detail["fact_checks"][0]["id"] == fact_check["id"]
@@ -45,5 +45,5 @@ def test_get_debate_attaches_sources_to_fact_checks(tmp_path, monkeypatch):
         assert detail["sources"][0]["fact_check_id"] == fact_check["id"]
         assert detail["sources"][1]["fact_check_id"] == fact_check["id"]
     finally:
-        db.clear_all()
+        db.clear_all("device-a")
         db.get_settings.cache_clear()

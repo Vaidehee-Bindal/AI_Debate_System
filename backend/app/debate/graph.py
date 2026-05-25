@@ -15,6 +15,7 @@ from .scoring import score_round
 
 class DebateState(TypedDict, total=False):
     debate_id: str
+    device_id: str
     topic: str
     rounds: int
     stance_style: str
@@ -59,6 +60,7 @@ class DebateGraphRunner:
     async def stream(self, debate: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
         state: DebateState = {
             "debate_id": debate["id"],
+            "device_id": debate.get("device_id", ""),
             "topic": debate["topic"],
             "rounds": debate["rounds"],
             "stance_style": debate["stance_style"],
@@ -293,7 +295,7 @@ class DebateGraphRunner:
         return state
 
     async def _summarizer(self, state: DebateState) -> DebateState:
-        detail = db.get_debate(state["debate_id"])
+        detail = db.get_debate(state["debate_id"], state.get("device_id", ""))
         messages = detail.get("messages", [])
         fact_checks = detail.get("fact_checks", [])
         scores = detail.get("scores", [])
