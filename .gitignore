@@ -9,3 +9,4 @@ __pycache__/
 *.sqlite3
 .env
 *.log
+temp_debate.json

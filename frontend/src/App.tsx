@@ -59,14 +59,22 @@ type Debate = {
 const nav = [["Dashboard", Home], ["Debate History", History], ["About", Info]] as const;
 
 export function App() {
-  const [topic, setTopic] = useState("AI will replace software engineers");
+  const [topic, setTopic] = useState("");
   const [rounds, setRounds] = useState(3);
   const [debate, setDebate] = useState<Debate | null>(null);
+  const [isReadOnlyDebate, setIsReadOnlyDebate] = useState(false);
+  const [deletePrompt, setDeletePrompt] = useState<{
+    scope: "single" | "all";
+    debateId?: string;
+    title: string;
+    message: string;
+  } | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [facts, setFacts] = useState<FactCheck[]>([]);
   const [scores, setScores] = useState<Score[]>([]);
   const [history, setHistory] = useState<Debate[]>([]);
   const [view, setView] = useState<"dashboard" | "history" | "about">("dashboard");
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [summary, setSummary] = useState("");
   const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState("");
@@ -126,6 +134,7 @@ export function App() {
 
   async function startDebate(e: FormEvent) {
     e.preventDefault();
+    if (isReadOnlyDebate) return;
     setError("");
     setMessages([]);
     setFacts([]);
@@ -146,6 +155,7 @@ export function App() {
       });
 
       setDebate(created);
+      setIsReadOnlyDebate(false);
       const stream = new EventSource(`${API_BASE}/api/debates/${created.id}/stream`);
       stream.onerror = () => {
         setError(`Failed to open stream to ${API_BASE}`);
@@ -170,14 +180,58 @@ export function App() {
     }
   }
 
+  function startNewDebate() {
+    setDebate(null);
+    setTopic("");
+    setRounds(3);
+    setMessages([]);
+    setFacts([]);
+    setScores([]);
+    setSummary("");
+    setError("");
+    setIsRunning(false);
+    setIsReadOnlyDebate(false);
+    setView("dashboard");
+  }
+
+  async function confirmDeletePrompt() {
+    if (!deletePrompt) return;
+
+    try {
+      if (deletePrompt.scope === "all") {
+        await fetch(`${API_BASE}/api/debates`, { method: "DELETE" });
+        setHistory([]);
+        startNewDebate();
+      } else if (deletePrompt.debateId) {
+        await fetch(`${API_BASE}/api/debates/${deletePrompt.debateId}`, { method: "DELETE" });
+        setHistory((items) => items.filter((item) => item.id !== deletePrompt.debateId));
+        if (debate?.id === deletePrompt.debateId) {
+          startNewDebate();
+        }
+      }
+      setDeletePrompt(null);
+    } catch (error) {
+      console.error(error);
+      alert("Failed to delete debate");
+    }
+  }
+
   async function loadDebate(id: string) {
     const detail = await fetch(`${API_BASE}/api/debates/${id}`).then((r) => r.json());
     setDebate(detail);
     setTopic(detail.topic);
+    setRounds(detail.rounds);
+    setIsReadOnlyDebate(true);
     setMessages(detail.messages ?? []);
     setFacts(detail.fact_checks ?? []);
     setScores(detail.scores ?? []);
     setSummary(detail.final_summary ?? "");
+    setView("dashboard");
+  }
+
+  function handleViewChange(nextView: "dashboard" | "history" | "about") {
+    setView(nextView);
+    setMobileNavOpen(false);
   }
 
   return (
@@ -211,26 +265,123 @@ export function App() {
         </aside>
 
         <main className="p-4 md:p-6">
+          <div className="mb-4 flex items-center justify-between rounded-lg border border-[#efcc93] bg-vellum/90 p-3 shadow-panel lg:hidden">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-copper">AI Debate System</p>
+              <p className="text-sm text-[#6e5846]">{view === "dashboard" ? "Dashboard" : view === "history" ? "Debate History" : "About"}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setMobileNavOpen((open) => !open)}
+              className="inline-flex h-11 w-11 items-center justify-center rounded-md border border-[#e8c790] bg-white/70 text-ink shadow-sm"
+              aria-label={mobileNavOpen ? "Close navigation" : "Open navigation"}
+            >
+              <MessageSquare className="h-5 w-5 text-amberline" />
+            </button>
+          </div>
+
+          <div
+            className={`fixed inset-0 z-40 bg-black/45 transition-opacity lg:hidden ${mobileNavOpen ? "opacity-100" : "pointer-events-none opacity-0"}`}
+            onClick={() => setMobileNavOpen(false)}
+            aria-hidden="true"
+          />
+
+          <aside
+            className={`fixed right-0 top-0 z-50 h-full w-[82vw] max-w-[320px] border-l border-[#efcc93] bg-[linear-gradient(155deg,#352313,#6f4718)] p-5 text-white shadow-2xl transition-transform duration-300 lg:hidden ${mobileNavOpen ? "translate-x-0" : "translate-x-full"}`}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3 text-xl font-bold">
+                <MessageSquare className="h-9 w-9 text-[#ffd56c]" />
+                <span>AI Debate<br />System</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setMobileNavOpen(false)}
+                className="rounded-md border border-white/20 px-3 py-2 text-sm font-semibold text-white/90"
+              >
+                Close
+              </button>
+            </div>
+
+            <nav className="mt-8 space-y-3">
+              {nav.map(([label, Icon]) => {
+                const targetView = label === "Debate History" ? "history" : label === "About" ? "about" : "dashboard";
+                const active = view === targetView;
+                return (
+                  <button
+                    key={label}
+                    onClick={() => handleViewChange(targetView)}
+                    className={`flex w-full items-center gap-4 rounded-md px-4 py-3 text-left ${
+                      active ? "bg-[#ffe68c] text-ink" : "text-white/90 hover:bg-white/10"
+                    }`}
+                  >
+                    <Icon className="h-5 w-5 text-[#ffd35c]" />
+                    <span className="font-medium">{label}</span>
+                  </button>
+                );
+              })}
+            </nav>
+
+            <div className="absolute bottom-6 left-5 right-5 border-t border-white/15 pt-5">
+              <p className="font-semibold">AI Debate System</p>
+              <p className="mt-2 text-sm text-white/80">Intelligent debates. Smarter decisions.</p>
+            </div>
+          </aside>
+
           {view === "dashboard" && (
             <div>
+              {isReadOnlyDebate && (
+                <section className="mb-5 rounded-lg border border-[#efcc93] bg-vellum/90 p-5 shadow-panel">
+                  <div className="flex flex-wrap items-center justify-between gap-4">
+                    <div>
+                      <p className="text-sm font-medium text-copper">New Debate</p>
+                      <h2 className="mt-1 text-2xl font-bold">Open a fresh debate from the placeholder</h2>
+                      <p className="mt-2 text-sm text-[#6e5846]">Use this to return to the editable dashboard and enter a new topic.</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={startNewDebate}
+                      className="rounded-md bg-[#ffc94d] px-4 py-2 text-sm font-bold text-ink shadow-sm hover:bg-[#ffbd2f]"
+                    >
+                      New Debate
+                    </button>
+                  </div>
+                </section>
+              )}
+
               <section className="rounded-lg border border-[#efcc93] bg-vellum/85 p-5 shadow-panel">
                 <form onSubmit={startDebate} className="grid gap-4 xl:grid-cols-[1fr_auto] xl:items-end">
                   <div>
                     <p className="text-sm font-medium text-copper">Current Topic</p>
-                    <input value={topic} onChange={(e) => setTopic(e.target.value)} className="mt-2 w-full bg-transparent text-2xl font-bold outline-none md:text-3xl" aria-label="Debate topic" />
+                    {isReadOnlyDebate ? (
+                      <div className="mt-2 text-2xl font-bold md:text-3xl text-[#8b6a4c]">{topic}</div>
+                    ) : (
+                      <input value={topic} onChange={(e) => setTopic(e.target.value)} placeholder="Enter your debate topic here" className="mt-2 w-full bg-transparent text-2xl font-bold outline-none md:text-3xl" aria-label="Debate topic" />
+                    )}
                     <div className="mt-4 flex flex-wrap gap-3">
                       <label className="rounded-md border border-[#e8c790] bg-white/55 px-4 py-2 text-sm">
                         Rounds
-                        <input type="number" min={1} max={5} value={rounds} onChange={(e) => setRounds(Number(e.target.value))} className="ml-3 w-12 bg-transparent font-semibold outline-none" />
+                        {isReadOnlyDebate ? (
+                          <span className="ml-3 font-semibold">{rounds}</span>
+                        ) : (
+                          <input type="number" min={1} max={5} value={rounds} onChange={(e) => setRounds(Number(e.target.value))} className="ml-3 w-12 bg-transparent font-semibold outline-none" />
+                        )}
                       </label>
                       <div className="rounded-md border border-[#e8c790] bg-white/55 px-4 py-2 text-sm">Model: Llama 3.3 70B (Groq)</div>
                     </div>
+                    {isReadOnlyDebate && <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-copper">Historical debate is read-only</p>}
                   </div>
 
-                  <button className="inline-flex items-center justify-center gap-3 rounded-md bg-[#ffc94d] px-8 py-4 font-bold text-ink shadow-sm hover:bg-[#ffbd2f]" disabled={isRunning}>
-                    {isRunning ? <Loader2 className="h-5 w-5 animate-spin" /> : <Square className="h-4 w-4 fill-ink" />}
-                    {isRunning ? "Debating" : "Start Debate"}
-                  </button>
+                  {!isReadOnlyDebate ? (
+                    <button className="inline-flex items-center justify-center gap-3 rounded-md bg-[#ffc94d] px-8 py-4 font-bold text-ink shadow-sm hover:bg-[#ffbd2f]" disabled={isRunning}>
+                      {isRunning ? <Loader2 className="h-5 w-5 animate-spin" /> : <Square className="h-4 w-4 fill-ink" />}
+                      {isRunning ? "Debating" : "Start Debate"}
+                    </button>
+                  ) : (
+                    <div className="inline-flex items-center justify-center rounded-md border border-[#e8c790] bg-white/55 px-8 py-4 font-bold text-[#8b6a4c]">
+                      Read Only
+                    </div>
+                  )}
                 </form>
                 {error && <p className="mt-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
               </section>
@@ -246,15 +397,18 @@ export function App() {
                       </div>
                     ) : (
                       messages.map((message, idx) => (
-                        <article key={`${message.speaker}-${message.round}-${idx}`} className="rounded-lg border border-[#efcc93] bg-vellum p-5 shadow-panel">
+                        <article
+                          key={`${message.speaker}-${message.round}-${idx}`}
+                          className={`rounded-lg border p-5 shadow-panel ${message.speaker === "Con Agent" ? "border-[#efd9b7] bg-[#fff7ea]" : "border-[#efcc93] bg-vellum"}`}
+                        >
                           <div className="flex items-start gap-4">
-                            <div className={`grid h-14 w-14 shrink-0 place-items-center rounded-md ${message.speaker === "Con Agent" ? "bg-[#a76b38] text-white" : "bg-[#ffd769] text-ink"}`}>
+                            <div className={`grid h-14 w-14 shrink-0 place-items-center rounded-md ${message.speaker === "Con Agent" ? "bg-[#c98a4a] text-white" : "bg-[#ffd769] text-ink"}`}>
                               {message.speaker === "Moderator" ? <UserRound /> : <Bot />}
                             </div>
                             <div className="min-w-0 flex-1">
                               <div className="flex flex-wrap items-center justify-between gap-3">
                                 <h2 className="text-lg font-bold">{message.speaker}</h2>
-                                <span className="rounded-md bg-[#ffe28a] px-3 py-1 text-xs font-bold">{message.speaker === "Moderator" ? `Round ${message.round}` : message.speaker.split(" ")[0]}</span>
+                                <span className={`rounded-md px-3 py-1 text-xs font-bold ${message.speaker === "Con Agent" ? "bg-[#efd0a1] text-[#6a4215]" : "bg-[#ffe28a]"}`}>{message.speaker === "Moderator" ? `Round ${message.round}` : message.speaker.split(" ")[0]}</span>
                               </div>
                               <p className="mt-4 whitespace-pre-wrap leading-7">{message.content}</p>
                             </div>
@@ -265,7 +419,8 @@ export function App() {
                     <section className="rounded-lg border border-[#efcc93] bg-vellum p-5 shadow-panel">
                       <div className="flex items-center justify-between">
                         <h2 className="text-lg font-bold">Debate Summary</h2>
-                        <div className="flex items-center gap-2">
+                        {!isReadOnlyDebate && (
+                          <div className="flex items-center gap-2">
                           <button
                             onClick={async () => {
                               try {
@@ -280,7 +435,8 @@ export function App() {
                           >
                             Copy
                           </button>
-                        </div>
+                          </div>
+                        )}
                       </div>
 
                       <div className="mt-4">
@@ -377,16 +533,13 @@ export function App() {
                 <h2 className="text-lg font-bold">Debate History</h2>
                 <div className="flex items-center gap-2">
                   <button
-                    onClick={async () => {
-                      if (!confirm("Clear all debate history? This cannot be undone.")) return;
-                      try {
-                        await fetch(`${API_BASE}/api/debates`, { method: "DELETE" });
-                        setHistory([]);
-                      } catch (e) {
-                        console.error(e);
-                        alert("Failed to clear history");
-                      }
-                    }}
+                    onClick={() =>
+                      setDeletePrompt({
+                        scope: "all",
+                        title: "Delete all debate history?",
+                        message: "This will permanently remove every debate, and it cannot be restored.",
+                      })
+                    }
                     className="rounded-md bg-red-500 px-3 py-2 text-sm font-semibold text-white"
                   >
                     Clear History
@@ -400,21 +553,21 @@ export function App() {
                   <div key={item.id} className="flex items-center justify-between rounded-md border border-[#efcc93] bg-white/55 p-3">
                     <div>
                       <div className="font-semibold">{item.topic}</div>
-                      <div className="text-sm text-[#6e5846]">{item.status} • {new Date(item.created_at).toLocaleString()}</div>
+                      <div className="text-sm text-[#6e5846]">
+                        {item.status} • {item.rounds} rounds • {new Date(item.created_at).toLocaleString()}
+                      </div>
                     </div>
                     <div className="flex items-center gap-2">
                       <button onClick={() => loadDebate(item.id)} className="rounded-md border border-[#efcc93] bg-white/55 px-3 py-2 text-sm">Open</button>
                       <button
-                        onClick={async () => {
-                          if (!confirm("Delete this debate?")) return;
-                          try {
-                            await fetch(`${API_BASE}/api/debates/${item.id}`, { method: "DELETE" });
-                            setHistory((h) => h.filter((d) => d.id !== item.id));
-                          } catch (e) {
-                            console.error(e);
-                            alert("Failed to delete debate");
-                          }
-                        }}
+                        onClick={() =>
+                          setDeletePrompt({
+                            scope: "single",
+                            debateId: item.id,
+                            title: "Delete this debate permanently?",
+                            message: "This debate will be deleted forever and cannot be restored.",
+                          })
+                        }
                         className="rounded-md bg-red-500 px-3 py-2 text-sm font-semibold text-white"
                       >
                         Delete
@@ -429,8 +582,72 @@ export function App() {
           {view === "about" && (
             <section className="rounded-lg border border-[#efcc93] bg-vellum/85 p-5 shadow-panel">
               <h2 className="text-lg font-bold">About</h2>
-              <p className="mt-3 text-sm text-[#6e5846]">AI Debate System — demo UI.</p>
+              <div className="mt-4 space-y-4 text-sm leading-6 text-[#6e5846]">
+                <p>
+                  AI Debate System is a structured argument platform where two sides debate a topic while the system
+                  moderates the exchange, extracts checkable claims, gathers references, and scores the strength of each
+                  side in real time.
+                </p>
+                <p>
+                  It is designed to make disagreements easier to understand by presenting both perspectives side by side.
+                  Instead of reading a single opinion, you can see how the Pro Agent and Con Agent build their arguments,
+                  what evidence supports them, and where the strongest counterpoints appear.
+                </p>
+                <p>
+                  The system is useful for many topics, including technology, education, science, policy, business, and
+                  everyday decision-making. It can be used for classroom learning, discussion practice, research
+                  comparison, critical thinking exercises, and exploring complex issues from multiple angles.
+                </p>
+                <p>
+                  It is especially helpful when you want to compare both sides practically, because the debate flow shows
+                  the arguments, the references, and the scoring together in one place. That makes it easier to judge the
+                  quality of the reasoning instead of relying on a quick summary alone.
+                </p>
+                <div className="rounded-md border border-[#efd7ad] bg-white/60 p-4">
+                  <p className="font-semibold text-[#2f241c]">Features</p>
+                  <ul className="mt-2 list-disc space-y-2 pl-5">
+                    <li>Live moderated debates with clear round-by-round structure.</li>
+                    <li>Claim extraction and fact checking with saved source references.</li>
+                    <li>Scoring that compares both sides using reasoning and evidence quality.</li>
+                    <li>Debate history so past discussions can be reviewed later.</li>
+                    <li>Read-only historical debates with clickable reference links.</li>
+                  </ul>
+                </div>
+                <p className="font-semibold text-[#2f241c]">
+                  Security note: your debate data is not leaked or shared outside the system, and the stored history is
+                  meant to stay within the application for review and reference.
+                </p>
+                <p className="font-bold text-[#2f241c]">
+                  NOTE: This system may occasionally make mistakes, so please review all data and references carefully and apply your own judgment as well.
+                </p>
+              </div>
             </section>
+          )}
+
+          {deletePrompt && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4">
+              <div className="w-full max-w-md rounded-2xl border border-[#efcc93] bg-[#fff8ee] p-6 shadow-2xl">
+                <p className="text-sm font-semibold uppercase tracking-wide text-copper">Confirm Deletion</p>
+                <h3 className="mt-2 text-2xl font-bold text-ink">{deletePrompt.title}</h3>
+                <p className="mt-3 text-sm leading-6 text-[#6e5846]">{deletePrompt.message}</p>
+                <div className="mt-6 flex items-center justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setDeletePrompt(null)}
+                    className="rounded-md border border-[#efcc93] bg-white/70 px-4 py-2 text-sm font-semibold text-ink"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={confirmDeletePrompt}
+                    className="rounded-md bg-red-500 px-4 py-2 text-sm font-semibold text-white hover:bg-red-600"
+                  >
+                    Confirm
+                  </button>
+                </div>
+              </div>
+            </div>
           )}
         </main>
       </div>

@@ -223,13 +223,21 @@ def get_debate(debate_id: str) -> dict[str, Any]:
         detail = dict(debate)
         detail["messages"] = [dict(row) for row in conn.execute("SELECT * FROM messages WHERE debate_id = ? ORDER BY created_at, rowid", (debate_id,))]
         detail["claims"] = [dict(row) for row in conn.execute("SELECT * FROM claims WHERE debate_id = ? ORDER BY created_at, rowid", (debate_id,))]
-        detail["fact_checks"] = [dict(row) for row in conn.execute("SELECT * FROM fact_checks WHERE debate_id = ? ORDER BY created_at, rowid", (debate_id,))]
+        fact_checks = [dict(row) for row in conn.execute("SELECT * FROM fact_checks WHERE debate_id = ? ORDER BY created_at, rowid", (debate_id,))]
+        source_rows = [dict(row) for row in conn.execute("SELECT * FROM sources WHERE debate_id = ? ORDER BY rowid", (debate_id,))]
+        sources_by_fact_check_id: dict[str, list[dict[str, Any]]] = {}
+        for source in source_rows:
+            fact_check_id = str(source.get("fact_check_id", ""))
+            sources_by_fact_check_id.setdefault(fact_check_id, []).append(source)
+        for fact_check in fact_checks:
+            fact_check["sources"] = sources_by_fact_check_id.get(str(fact_check.get("id", "")), [])
+        detail["fact_checks"] = fact_checks
         detail["scores"] = []
         for row in conn.execute("SELECT * FROM scores WHERE debate_id = ? ORDER BY round", (debate_id,)):
             score = dict(row)
             score["breakdown"] = json.loads(score.pop("breakdown_json"))
             detail["scores"].append(score)
-        detail["sources"] = [dict(row) for row in conn.execute("SELECT * FROM sources WHERE debate_id = ?", (debate_id,))]
+        detail["sources"] = source_rows
     return detail
 
 
