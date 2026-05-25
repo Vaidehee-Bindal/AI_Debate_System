@@ -144,7 +144,7 @@ AI_Debate_System/
 └── .gitignore
 ```
 
-## Project Structure
+## Project Structure Explainaation
 
 | Path | Purpose |
 | --- | --- |
@@ -223,7 +223,7 @@ Open `http://127.0.0.1:5174` in your browser.
 
 ## Environment Variables
 
-Create a `.env` file at the project root or inside `backend/` if needed.
+Create a `.env` file at the project root or inside `backend/` if needed. Sample .env.example file is given, kindly change it.
 
 ```env
 GROQ_API_KEY=
