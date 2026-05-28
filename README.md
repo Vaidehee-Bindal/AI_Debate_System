@@ -5,6 +5,9 @@ AI Debate System is a source-backed, multi-agent debate platform built with Fast
 ## Live Demo 
 Try it here - https://educational-ai-debate-system.vercel.app/
 
+## Video Demo
+https://github.com/user-attachments/assets/c1aff650-e6a9-4f30-a21b-5043bb17d00a
+
 ## Tech Stack
 
 | Layer | Technologies Used |
